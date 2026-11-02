@@ -152,6 +152,15 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:7px;top:3p
 .gcrow:has(input:checked){border-color:rgba(94,226,193,.4);background:rgba(94,226,193,.07)}
 .gcrow span{overflow:hidden;text-overflow:ellipsis}
 
+/* group features (lock gc name / set all nicknames) */
+.gfrow{display:flex;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);background:rgba(8,10,26,.55)}
+.gfrow.picked{border-color:rgba(243,201,105,.55)}
+.gfrow .nm{flex:1;min-width:0;cursor:pointer}
+.gfrow .nm b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gfrow button{width:84px;margin:0;padding:10px 12px}
+details.more{margin-top:14px}
+details.more summary{cursor:pointer;color:var(--gold);font-weight:700;font-size:14px}
+
 /* alerts */
 .banner{display:none;border:1px solid var(--bad);background:rgba(255,122,147,.1);color:#ffc6d1;border-radius:var(--r-md);padding:14px 16px;margin:0 0 14px}
 .banner.soft{border-color:var(--gold);background:rgba(243,201,105,.09);color:#f6e2b0}
@@ -259,6 +268,24 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:7px;top:3p
     <div class="g"><button class="go" onclick="gcStart()">▶ Start cycle</button><button class="stop" onclick="post('gcstop')">■ Stop cycle</button></div>
     <button class="ghost" onclick="gcSave()">Save names</button>
   </div>
+
+  <div class="c">
+    <h2>Group features</h2>
+    <div class="m">Dito na lang ginagawa ang <b>Lock GC name</b> at <b>Set ALL nicknames</b>. I-type ang gusto mong ilagay, tapos pindutin ang <b>Start</b> sa GC.</div>
+    <label>Feature<select id="gft" onchange="gfUI()"><option value="lock">Lock GC name</option><option value="nick">Set ALL nicknames</option></select></label>
+    <input id="gf1" type="text" autocomplete="off">
+    <div class="m" id="gfhint" style="margin-top:8px"></div>
+    <input id="gfind" type="search" placeholder="Hanapin ang GC…" oninput="gRender()">
+    <div id="gflist" class="gclist m">Pindutin ang Refresh list…</div>
+    <button class="ghost" onclick="gLoad()">Refresh list</button>
+
+    <details class="more">
+      <summary>More tools (pindutin muna ang pangalan ng GC)</summary>
+      <div class="m" id="gmore" style="margin-top:8px">Wala pang napiling GC</div>
+      <div class="g"><button class="ghost" onclick="gAct('gcname-set',{name:gv('gf1')})">Set GC name once</button><button class="ghost" onclick="gAct('nick-clearall')">Clear ALL nicknames</button></div>
+      <div class="g"><button class="go" onclick="gAct('nick-lock')">Lock nicknames</button><button class="ghost" onclick="gAct('nick-unlock')">Unlock nicknames</button></div>
+    </details>
+  </div>
 </section>
 
 <!-- SETTINGS -->
@@ -334,7 +361,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 (async()=>{let n;
  try{n=await (await fetch('/api/needsetup')).json();localStorage.open=n.open?'1':'0'}catch{n={open:localStorage.open==='1'}}
  if(!n.open&&!K&&navigator.onLine)K=localStorage.k=prompt("Dashboard password")||"";
- load();setTimeout(threads,1200)})();
+ load();setTimeout(threads,1200);setTimeout(gfUI,1400);setTimeout(gLoad,1600)})();
 
 /* ---------- tabs ---------- */
 const tabs=[...document.querySelectorAll('nav button')];
@@ -429,6 +456,58 @@ async function threads(){const t=await api('threads')||[];const on=new Set((S.th
  $('gclist').innerHTML=rows.length?rows.map(([id,n])=>`<label class="gcrow"><input type="checkbox" data-id="${esc(id)}" ${on.has(id)?'checked':''}><span>${esc(n)}</span></label>`).join(''):'Walang GC na nakita. Connect muna, tapos Refresh list.'}
 $('gclist').addEventListener('change',e=>{const i=e.target;if(i&&i.dataset&&i.dataset.id)post('threadset',{threadId:i.dataset.id,on:i.checked})});
 setInterval(load,3000);
+
+/* ---------- group features: Lock GC name + Set ALL nicknames ---------- */
+let GL=[],GACT={},GSEL='';
+const gv=i=>$(i).value.trim();
+function gName(id){const g=GL.find(x=>x.threadID===id);return g?g.name:id}
+function gfUI(){
+  const lock=gv('gft')==='lock';
+  $('gf1').placeholder=lock?'Pangalan ng GC na ila-lock (walang laman = current name)':'Nickname para sa lahat ({i} = bilang: 1, 2, 3…)';
+  $('gfhint').textContent=lock?'Start = i-lock ang pangalan. Babalik ito kapag may nagpalit. Stop = i-unlock.':'Start = lahat ng member ay mapapalitan ng nickname (dahan-dahan, may pagitan). Stop = ihinto ang takbo.';
+  gActive();
+}
+async function gLoad(){
+  const r=await api('groups');
+  if(!r||r.error){$('gflist').textContent=(r&&r.error)?r.error:'Hindi ma-load ang mga GC. Siguraduhing online ang bot.';return}
+  GL=r.groups||[];gRender();gActive();
+}
+function gRender(){
+  const q=gv('gfind').toLowerCase();
+  const rows=GL.filter(g=>!q||(g.name+' '+g.threadID).toLowerCase().includes(q));
+  $('gflist').innerHTML=rows.length?rows.map(g=>{const on=!!GACT[g.threadID];
+   return `<div class="gfrow${GSEL===g.threadID?' picked':''}"><div class="nm" data-pick="${esc(g.threadID)}"><b>${esc(g.name)}</b><span class="m">${g.members?esc(g.members)+' members':esc(g.threadID)}</span></div>`+
+   `<button class="${on?'stop':'go'}" data-go="${esc(g.threadID)}" data-on="${on?1:0}">${on?'Stop':'Start'}</button></div>`}).join(''):'Walang GC na nakita.';
+}
+async function gActive(){
+  const r=await api('group-active?feature='+encodeURIComponent(gv('gft')));
+  if(!r||r.error)return;
+  GACT={};(r.threads||[]).forEach(t=>GACT[t]=1);gRender();
+}
+async function gGo(id,on){
+  const f=gv('gft');
+  if(!on&&f==='nick'){
+    if(!gv('gf1'))return toast('I-type muna ang nickname',true);
+    if(!confirm('Palitan ang nickname ng LAHAT sa "'+gName(id)+'"?'))return;
+  }
+  const r=await api(on?'group/feature-stop':'group/feature-start',{threadID:id,feature:f,text:gv('gf1')});
+  if(r&&r.error)toast(r.error,true);else if(r)toast(on?'Na-stop ✓':'Nagsimula ✓');
+  gActive();
+}
+async function gAct(action,extra){
+  if(!GSEL)return toast('Pindutin muna ang pangalan ng GC',true);
+  const r=await api('group/'+action,Object.assign({threadID:GSEL},extra||{}));
+  if(r&&r.error)toast(r.error,true);
+  else if(r)toast(r.queued!==undefined?('Naka-queue: '+r.queued+' change, tumatakbo sa background'):'Tapos na ✓');
+  gActive();
+}
+$('gflist').addEventListener('click',e=>{
+  const b=e.target.closest('[data-go]');
+  if(b)return gGo(b.dataset.go,b.dataset.on==='1');
+  const p=e.target.closest('[data-pick]');
+  if(p){GSEL=p.dataset.pick;$('gmore').textContent='Napili: '+gName(GSEL);gRender()}
+});
+setInterval(()=>{if(S.online)gActive()},5000);
 
 /* ---------- offline app (PWA) ---------- */
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
