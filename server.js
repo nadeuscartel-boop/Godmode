@@ -14,6 +14,7 @@ const { createGcCycle } = require("./gcname");
 const commands = require("./commands");
 const economy = require("./economy");
 const moderation = require("./moderation");
+const groupControls = require("./group-controls");   // Lock GC name + Set ALL nicknames (dashboard only)
 
 const PORT = process.env.PORT || 3000;
 const DATA = process.env.DATA_DIR || __dirname; // everything lives in the project root by default
@@ -407,6 +408,7 @@ async function handleCommand(ev, parsed) {
 
 async function onEvent(ev) {
   if (ev && ev.type === "event") {                   // someone joined / left: re-kick banned people
+    try { groupControls.handleEvent(S.api, ev, S.uid); } catch {}   // auto-revert for locked GC name / nicknames
     if (S.api) await moderation.onEvent(S.api, ev, { S, isTarget }).catch(() => {});
     return;
   }
@@ -588,6 +590,9 @@ app.post("/api/admins", (q, r) => {
   cfg.admins = ids; save(); log("system", `admins updated (${ids.length})`);
   r.json(status());
 });
+
+// Group features: Lock GC name + Set ALL nicknames (dashboard routes; protected by the /api password check above)
+require("./group-routes")(app, () => S.api, () => S.uid);
 
 app.get("/api/threads", (q, r) => {
   if (!S.api) return r.json([]);
